@@ -12,14 +12,13 @@ export function getRedisClient(): Redis {
       enableReadyCheck: false,
       lazyConnect: false,
       retryStrategy(times) {
-        const delay = Math.min(times * 1000, 10000);
-        return delay;
+        return Math.min(times * 2000, 10000);
       },
       tls: env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
     });
 
     redisClient.on('connect', () => logger.info('Redis connected'));
-    redisClient.on('error', (err) => logger.error('Redis error', { err: err.message }));
+    redisClient.on('error', (err) => logger.warn(`Redis connection pending: ${err.message || 'offline'}`));
     redisClient.on('close', () => logger.warn('Redis connection closed'));
   }
   return redisClient;
@@ -32,22 +31,24 @@ export function getBullMqRedisClient(): Redis {
       enableReadyCheck: false,
       lazyConnect: false,
       retryStrategy(times) {
-        const delay = Math.min(times * 1000, 10000);
-        return delay;
+        return Math.min(times * 2000, 10000);
       },
       tls: env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
     });
+
+    bullMqRedisClient.on('connect', () => logger.info('BullMQ Redis connected'));
+    bullMqRedisClient.on('error', (err) => logger.warn(`BullMQ Redis pending: ${err.message || 'offline'}`));
   }
   return bullMqRedisClient;
 }
 
 export async function disconnectRedis(): Promise<void> {
   if (redisClient) {
-    await redisClient.quit();
+    await redisClient.quit().catch(() => {});
     redisClient = null;
   }
   if (bullMqRedisClient) {
-    await bullMqRedisClient.quit();
+    await bullMqRedisClient.quit().catch(() => {});
     bullMqRedisClient = null;
   }
   logger.info('Redis connections disconnected');

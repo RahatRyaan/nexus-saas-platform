@@ -36,9 +36,10 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
   try {
     const pubClient = getRedisClient();
     const subClient = pubClient.duplicate();
+    subClient.on('error', (err) => logger.warn(`Redis subClient pending: ${err.message || 'offline'}`));
     io.adapter(createAdapter(pubClient, subClient));
   } catch (err: any) {
-    logger.warn('Socket.io Redis adapter init failed, using default memory adapter', { err: err.message });
+    logger.warn('Socket.io Redis adapter init fallback to memory adapter', { err: err.message });
   }
 
   // Authentication middleware for Socket.io
@@ -84,7 +85,7 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
         });
       }
     } catch {
-      // Ignore presence error if redis is connecting
+      // Non-blocking
     }
 
     // Room join handlers
@@ -128,7 +129,7 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
       });
     });
 
-    // Clean up on disconnect using disconnecting event
+    // Clean up on disconnect
     socket.on('disconnecting', async () => {
       const rooms = Array.from(socket.rooms);
       logger.info(`Socket disconnecting: ${socket.id} (rooms: ${rooms.join(', ')})`);
@@ -147,7 +148,7 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
           }
         }
       } catch {
-        // Ignore
+        // Non-blocking
       }
     });
   });
