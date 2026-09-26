@@ -21,14 +21,29 @@ export function createApp(): Express {
 
   // Security & standard middlewares
   app.use(helmet({ contentSecurityPolicy: false }));
+
+  // CORS allowing Vercel preview & production domains
   app.use(
     cors({
-      origin: env.CLIENT_URL,
+      origin: (origin, callback) => {
+        // Allow all Vercel domains, localhost, and configured CLIENT_URL
+        if (
+          !origin ||
+          origin.includes('vercel.app') ||
+          origin.includes('localhost') ||
+          origin === env.CLIENT_URL
+        ) {
+          callback(null, true);
+        } else {
+          callback(null, true); // Permissive for preview branches
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }),
   );
+
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
   app.use(cookieParser());
 
@@ -43,6 +58,16 @@ export function createApp(): Express {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+    });
+  });
+
+  // Root endpoint friendly welcome
+  app.get('/', (_req, res) => {
+    res.status(200).json({
+      name: 'Nexus SaaS API',
+      status: 'online',
+      documentation: '/api-docs',
+      health: '/health',
     });
   });
 

@@ -1,7 +1,14 @@
 import axios from 'axios';
 
+// Automatically detect live Render URL when running in browser or fallback to env
+const BACKEND_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
+    ? 'https://nexus-server-ns9o.onrender.com'
+    : 'http://localhost:5000');
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL: BACKEND_URL,
   withCredentials: true,
 });
 
@@ -21,7 +28,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       try {
         const res = await axios.post(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/refresh-token`,
+          `${BACKEND_URL}/api/auth/refresh-token`,
           {},
           { withCredentials: true },
         );
