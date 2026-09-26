@@ -1,18 +1,33 @@
-FROM node:20-alpine AS base
-WORKDIR /app
-COPY package*.json ./
+FROM node:20-alpine AS builder
 
-FROM base AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY server/package.json server/package.json
+COPY client/package.json client/package.json
+
 RUN npm ci
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
+
+COPY server/tsconfig.json server/tsconfig.json
+COPY server/src server/src
+
+RUN npm run build --workspace=server
+
 
 FROM node:20-alpine AS production
+
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY --from=builder /app/dist ./dist
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+COPY server/package.json server/package.json
+COPY client/package.json client/package.json
+
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/server/dist ./server/dist
+
 EXPOSE 5000
 USER node
-CMD ["node", "dist/index.js"]
+
+CMD ["node", "server/dist/index.js"]

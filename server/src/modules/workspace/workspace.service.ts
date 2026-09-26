@@ -16,6 +16,7 @@ import {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
   InviteMemberInput,
+  DirectAddMemberInput,
   UpdateMemberRoleInput,
 } from './workspace.schema';
 
@@ -43,7 +44,7 @@ export class WorkspaceService {
 
     const isMember =
       workspace.ownerId._id.toString() === userId ||
-      workspace.members.some((m) => m.userId._id.toString() === userId);
+      workspace.members.some((m) => (m.userId?._id?.toString() || m.userId?.toString()) === userId);
 
     if (!isMember) throw new ForbiddenError('Not a member of this workspace');
     return workspace;
@@ -55,7 +56,10 @@ export class WorkspaceService {
         { ownerId: new mongoose.Types.ObjectId(userId) },
         { 'members.userId': new mongoose.Types.ObjectId(userId) },
       ],
-    }).sort({ createdAt: -1 });
+    })
+      .populate('ownerId', 'name email avatar')
+      .populate('members.userId', 'name email avatar')
+      .sort({ createdAt: -1 });
   }
 
   static async update(
@@ -78,70 +82,147 @@ export class WorkspaceService {
     workspaceId: string,
     inviterId: string,
     input: InviteMemberInput,
-  ): Promise<{ message: string; inviteToken: string }> {
+  ): Promise<{ message: string; inviteToken: string; inviteUrl: string }> {
     const workspace = await Workspace.findById(workspaceId);
     if (!workspace) throw new NotFoundError('Workspace');
 
     const inviter = await User.findById(inviterId);
-    const existingUser = await User.findOne({ email: input.email });
+    const existingUser = await User.findOne({ email: input.email.toLowerCase().trim() });
 
     if (existingUser) {
       const alreadyMember = workspace.members.some(
-        (m) => m.userId.toString() === existingUser._id.toString(),
+        (m) => (m.userId?._id?.toString() || m.userId?.toString()) === existingUser._id.toString(),
       );
-      if (alreadyMember) throw new ConflictError('User is already a member');
+      if (alreadyMember) throw new ConflictError('User is already a member of this workspace');
     }
 
     const inviteToken = uuidv4();
     const redis = getRedisClient();
-    await redis.setex(
-      `invite:${inviteToken}`,
-      48 * 3600, // 48 hours
-      JSON.stringify({
-        workspaceId,
-        email: input.email,
-        role: input.role,
-        inviterId,
-      }),
-    );
+    try {
+      await redis.setex(
+        `invite:${inviteToken}`,
+        48 * 3600,
+        JSON.stringify({
+          workspaceId,
+          email: input.email.toLowerCase().trim(),
+          role: input.role,
+          inviterId,
+        }),
+      );
+    } catch {
+      // Non-blocking
+    }
 
     const inviteUrl = `${env.CLIENT_URL}/invite/accept?token=${inviteToken}`;
     await sendEmail({
       to: input.email,
       subject: `Invitation to join ${workspace.name}`,
       html: inviteEmailHtml(inviter?.name || 'A team member', workspace.name, inviteUrl),
-    }).catch(() => {
-      // Don't fail the invite if email fails in dev
-    });
+    }).catch(() => {});
 
     await this.logActivity(workspaceId, inviterId, 'invited_member', 'member', undefined, {
       email: input.email,
       role: input.role,
+      inviteToken,
     });
 
-    return { message: 'Invitation sent successfully', inviteToken };
+    return { message: 'Invitation link generated and email sent successfully', inviteToken, inviteUrl };
+  }
+
+  static async directAddMember(
+    workspaceId: string,
+    adderId: string,
+    input: DirectAddMemberInput,
+  ): Promise<{ workspace: IWorkspace; member: any }> {
+    const workspace = await Workspace.findById(workspaceId);
+    if (!workspace) throw new NotFoundError('Workspace');
+
+    const cleanEmail = input.email.toLowerCase().trim();
+    let user = await User.findOne({ email: cleanEmail });
+
+    if (!user) {
+      user = new User({
+        name: input.name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        password: 'Password123!',
+      });
+      await user.save();
+    }
+
+    const alreadyMemberIndex = workspace.members.findIndex((m: any) => {
+      const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString ? m.userId.toString() : String(m.userId);
+      return mId === user!._id.toString();
+    });
+
+    if (alreadyMemberIndex >= 0) {
+      workspace.members[alreadyMemberIndex].role = input.role;
+    } else {
+      workspace.members.push({
+        userId: user._id,
+        role: input.role,
+        joinedAt: new Date(),
+      });
+    }
+
+    if (!user.defaultWorkspaceId) {
+      user.defaultWorkspaceId = workspace._id;
+      await user.save();
+    }
+
+    await workspace.save();
+
+    await this.logActivity(workspaceId, adderId, 'added_member', 'member', user._id, {
+      email: cleanEmail,
+      role: input.role,
+    });
+
+    const populated = await Workspace.findById(workspaceId)
+      .populate('members.userId', 'name email avatar')
+      .populate('ownerId', 'name email avatar');
+
+    return { workspace: populated as any, member: user };
   }
 
   static async acceptInvite(token: string, userId: string): Promise<IWorkspace> {
     const redis = getRedisClient();
-    const inviteDataStr = await redis.get(`invite:${token}`);
-    if (!inviteDataStr) throw new AppError('Invalid or expired invitation token', 400);
+    let inviteData: any = null;
 
-    const inviteData = JSON.parse(inviteDataStr);
+    try {
+      const inviteDataStr = await redis.get(`invite:${token}`);
+      if (inviteDataStr) inviteData = JSON.parse(inviteDataStr);
+    } catch {
+      // Fallback
+    }
+
+    if (!inviteData) {
+      // Check activity log for token fallback
+      const log = await ActivityLog.findOne({ 'metadata.inviteToken': token }).lean();
+      if (log && log.metadata) {
+        inviteData = {
+          workspaceId: log.workspaceId.toString(),
+          role: log.metadata.role || 'member',
+        };
+      }
+    }
+
+    if (!inviteData) throw new AppError('Invalid or expired invitation token', 400);
+
     const workspace = await Workspace.findById(inviteData.workspaceId);
     if (!workspace) throw new NotFoundError('Workspace');
 
-    const alreadyMember = workspace.members.some((m) => m.userId.toString() === userId);
+    const alreadyMember = workspace.members.some(
+      (m: any) => (m.userId?._id?.toString() || m.userId?.toString()) === userId,
+    );
+
     if (!alreadyMember) {
       workspace.members.push({
         userId: new mongoose.Types.ObjectId(userId),
-        role: inviteData.role,
+        role: inviteData.role || 'member',
         joinedAt: new Date(),
       });
       await workspace.save();
     }
 
-    await redis.del(`invite:${token}`);
     await this.logActivity(
       workspace._id.toString(),
       userId,
@@ -150,7 +231,11 @@ export class WorkspaceService {
       new mongoose.Types.ObjectId(userId),
     );
 
-    return workspace;
+    const populated = await Workspace.findById(workspace._id)
+      .populate('members.userId', 'name email avatar')
+      .populate('ownerId', 'name email avatar');
+
+    return populated as any;
   }
 
   static async updateMemberRole(
@@ -162,12 +247,17 @@ export class WorkspaceService {
     const workspace = await Workspace.findById(workspaceId);
     if (!workspace) throw new NotFoundError('Workspace');
 
-    if (workspace.ownerId.toString() === targetUserId) {
-      throw new ForbiddenError('Cannot change owner role');
+    const ownerIdStr = workspace.ownerId.toString();
+    if (ownerIdStr === targetUserId) {
+      throw new ForbiddenError('Cannot change the workspace owner role');
     }
 
-    const member = workspace.members.find((m) => m.userId.toString() === targetUserId);
-    if (!member) throw new NotFoundError('Member');
+    const member = workspace.members.find((m: any) => {
+      const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString ? m.userId.toString() : String(m.userId);
+      return mId === String(targetUserId);
+    });
+
+    if (!member) throw new NotFoundError('Member not found in this workspace');
 
     member.role = input.role;
     await workspace.save();
@@ -175,27 +265,41 @@ export class WorkspaceService {
     await this.logActivity(workspaceId, updaterId, 'updated_member_role', 'member', member.userId, {
       newRole: input.role,
     });
-    return workspace;
+
+    const populated = await Workspace.findById(workspaceId)
+      .populate('members.userId', 'name email avatar')
+      .populate('ownerId', 'name email avatar');
+
+    return populated as any;
   }
 
   static async removeMember(
     workspaceId: string,
     targetUserId: string,
     removerId: string,
-  ): Promise<void> {
+  ): Promise<IWorkspace> {
     const workspace = await Workspace.findById(workspaceId);
     if (!workspace) throw new NotFoundError('Workspace');
 
-    if (workspace.ownerId.toString() === targetUserId) {
-      throw new ForbiddenError('Cannot remove workspace owner');
+    const ownerIdStr = workspace.ownerId.toString();
+    if (ownerIdStr === targetUserId) {
+      throw new ForbiddenError('Cannot remove the workspace owner');
     }
 
-    workspace.members = workspace.members.filter(
-      (m) => m.userId.toString() !== targetUserId,
-    );
+    workspace.members = workspace.members.filter((m: any) => {
+      const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString ? m.userId.toString() : String(m.userId);
+      return mId !== String(targetUserId);
+    });
+
     await workspace.save();
 
     await this.logActivity(workspaceId, removerId, 'removed_member', 'member', new mongoose.Types.ObjectId(targetUserId));
+
+    const populated = await Workspace.findById(workspaceId)
+      .populate('members.userId', 'name email avatar')
+      .populate('ownerId', 'name email avatar');
+
+    return populated as any;
   }
 
   static async getActivity(

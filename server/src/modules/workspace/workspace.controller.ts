@@ -4,6 +4,7 @@ import {
   createWorkspaceSchema,
   updateWorkspaceSchema,
   inviteMemberSchema,
+  directAddMemberSchema,
   updateMemberRoleSchema,
 } from './workspace.schema';
 
@@ -36,6 +37,12 @@ export class WorkspaceController {
     res.status(200).json(result);
   }
 
+  static async directAdd(req: Request, res: Response): Promise<void> {
+    const input = directAddMemberSchema.parse(req.body);
+    const result = await WorkspaceService.directAddMember(req.params.id, req.user!.userId, input);
+    res.status(200).json(result);
+  }
+
   static async acceptInvite(req: Request, res: Response): Promise<void> {
     const { token } = req.body;
     const workspace = await WorkspaceService.acceptInvite(token, req.user!.userId);
@@ -50,12 +57,12 @@ export class WorkspaceController {
       req.user!.userId,
       input,
     );
-    res.status(200).json({ workspace });
+    res.status(200).json({ workspace, message: 'Member role updated successfully' });
   }
 
   static async removeMember(req: Request, res: Response): Promise<void> {
-    await WorkspaceService.removeMember(req.params.id, req.params.userId, req.user!.userId);
-    res.status(200).json({ message: 'Member removed successfully' });
+    const workspace = await WorkspaceService.removeMember(req.params.id, req.params.userId, req.user!.userId);
+    res.status(200).json({ workspace, message: 'Member removed successfully' });
   }
 
   static async getActivity(req: Request, res: Response): Promise<void> {

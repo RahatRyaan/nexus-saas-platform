@@ -45,30 +45,40 @@ authRouter.get('/profile', authenticate, asyncHandler(async (req, res) => {
   res.status(200).json({ user });
 }));
 
-authRouter.patch('/profile', authenticate, asyncHandler(async (req, res) => {
+const updateProfileHandler = asyncHandler(async (req, res) => {
   const { name, avatar } = req.body;
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = name.trim();
+  if (avatar !== undefined) updateData.avatar = avatar;
+
   const user = await User.findByIdAndUpdate(
     req.user!.userId,
-    { $set: { ...(name && { name }), ...(avatar && { avatar }) } },
+    { $set: updateData },
     { new: true },
   ).select('-password');
-  res.status(200).json({ user });
-}));
+
+  res.status(200).json({ user, message: 'Profile updated successfully' });
+});
+
+authRouter.patch('/profile', authenticate, updateProfileHandler);
+authRouter.post('/profile', authenticate, updateProfileHandler);
+authRouter.put('/profile', authenticate, updateProfileHandler);
 
 authRouter.post('/profile/avatar', authenticate, upload.single('avatar'), asyncHandler(async (req, res) => {
   const file = req.file;
-  if (!file) {
-    res.status(400).json({ error: 'Avatar file is required' });
-    return;
+  let avatarUrl = req.body.avatarUrl || '';
+
+  if (file) {
+    try {
+      const result = await uploadToCloudinary(file.buffer, file.mimetype, 'avatars', `user_${req.user!.userId}`);
+      avatarUrl = result.url;
+    } catch {
+      avatarUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    }
   }
 
-  let avatarUrl = '';
-  try {
-    const result = await uploadToCloudinary(file.buffer, file.mimetype, 'avatars', `user_${req.user!.userId}`);
-    avatarUrl = result.url;
-  } catch {
-    // Fallback data url if Cloudinary not reachable
-    avatarUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  if (!avatarUrl && req.body.avatar) {
+    avatarUrl = req.body.avatar;
   }
 
   const user = await User.findByIdAndUpdate(
@@ -77,7 +87,7 @@ authRouter.post('/profile/avatar', authenticate, upload.single('avatar'), asyncH
     { new: true },
   ).select('-password');
 
-  res.status(200).json({ user, avatarUrl });
+  res.status(200).json({ user, avatarUrl, message: 'Avatar updated successfully' });
 }));
 
 // Google OAuth routes
