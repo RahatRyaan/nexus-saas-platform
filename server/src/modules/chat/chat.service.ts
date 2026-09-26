@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
-import { Conversation, IConversation } from './chat.model';
-import { Message, IMessage } from './chat.model';
+import { Conversation, IConversation, Message, IMessage, Notification, INotification } from './chat.model';
 import { Workspace } from '../workspace/workspace.model';
 import { NotFoundError, ForbiddenError } from '../../middleware/errorHandler';
 import { getIO } from '../../socket';
@@ -61,7 +60,6 @@ export class ChatService {
     const wsObjId = new mongoose.Types.ObjectId(workspaceId);
     const userObjId = new mongoose.Types.ObjectId(userId);
 
-    // Auto-create or join general workspace channel if it exists
     let generalChannel = await Conversation.findOne({
       workspaceId: wsObjId,
       type: 'channel',
@@ -69,7 +67,6 @@ export class ChatService {
     });
 
     if (!generalChannel) {
-      // Find all workspace members to populate the initial general channel
       const ws = await Workspace.findById(wsObjId).lean();
       const allMemberIds = (ws as any)?.members?.map((m: any) => m.userId) || [userObjId];
       if ((ws as any)?.ownerId && !allMemberIds.some((id: any) => id.toString() === (ws as any).ownerId.toString())) {
@@ -84,7 +81,6 @@ export class ChatService {
       });
       await generalChannel.save();
     } else if (!generalChannel.participants.some((p) => p.toString() === userId)) {
-      // Auto-add member to the channel
       generalChannel.participants.push(userObjId);
       await generalChannel.save();
     }
@@ -137,7 +133,6 @@ export class ChatService {
     });
     if (!conv) throw new NotFoundError('Conversation not found');
 
-    // Auto-add sender to participants if not present
     if (!conv.participants.some((p) => p.toString() === senderId)) {
       conv.participants.push(new mongoose.Types.ObjectId(senderId));
     }
@@ -157,7 +152,6 @@ export class ChatService {
     conv.lastMessageAt = new Date();
     await conv.save();
 
-    // Broadcast message to conversation room and to the entire workspace
     try {
       const io = getIO();
       io.to(`chat:${conversationId}`).emit('sendMessage', {
