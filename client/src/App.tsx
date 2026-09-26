@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Kanban, MessageSquare, BookOpen, Sparkles, CreditCard, LogOut, Plus, 
-  UserPlus, ChevronDown, UserCheck, Crown, ShieldCheck, Users
+  UserPlus, ChevronDown, UserCheck, Crown, ShieldCheck, Users, Lock, ArrowRight, CheckCircle, Shield
 } from 'lucide-react';
 import { useAuthStore, Role, WorkspaceItem } from './store/authStore';
 import { api } from './lib/api';
@@ -15,7 +15,7 @@ import { TeamManagement } from './components/TeamManagement';
 import { BillingPortal } from './components/BillingPortal';
 import { ProfileSettings } from './components/ProfileSettings';
 
-// --- Authentication View ---
+// --- Premium Modern Authentication View with Google & 1-Click Role Switcher ---
 function AuthView() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('owner@nexus.app');
@@ -35,7 +35,6 @@ function AuthView() {
       const res = await api.post(endpoint, payload);
       localStorage.setItem('accessToken', res.data.accessToken);
 
-      // Immediately fetch user workspaces upon login
       const wsRes = await api.get('/api/workspaces', {
         headers: { Authorization: `Bearer ${res.data.accessToken}` },
       });
@@ -80,95 +79,154 @@ function AuthView() {
     setAuthError('');
   };
 
+  const handleGoogleLogin = () => {
+    window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`;
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-8 shadow-2xl">
-        <div className="flex items-center gap-3 justify-center mb-6">
-          <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/30">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Ambient background glow */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-indigo-600/15 blur-[120px] rounded-full pointer-events-none"></div>
+
+      <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl w-full max-w-md p-8 shadow-2xl relative z-10">
+        {/* Brand Header */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="h-12 w-12 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl shadow-xl shadow-indigo-600/30 mb-3 border border-indigo-400/20">
             N
           </div>
-          <span className="text-2xl font-bold text-white tracking-tight">Nexus Workspace</span>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Nexus Workspace</h1>
+          <p className="text-xs text-slate-400 mt-1">AI-Powered Team Collaboration & SaaS Platform</p>
         </div>
 
-        {/* Quick Demo Switcher */}
-        <div className="bg-slate-950 border border-slate-800 p-1.5 rounded-xl flex gap-1 mb-6 text-xs">
-          <button
-            type="button"
-            onClick={() => quickSelect('owner@nexus.app')}
-            className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-              email === 'owner@nexus.app' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Owner
-          </button>
-          <button
-            type="button"
-            onClick={() => quickSelect('admin@nexus.app')}
-            className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-              email === 'admin@nexus.app' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Admin
-          </button>
-          <button
-            type="button"
-            onClick={() => quickSelect('member@nexus.app')}
-            className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-              email === 'member@nexus.app' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Member
-          </button>
+        {/* 1-Click Role Quick-Select Tabs */}
+        <div className="mb-6 space-y-1.5">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">Demo Role Quick Select</div>
+          <div className="bg-slate-950 border border-slate-800/80 p-1.5 rounded-2xl flex gap-1 text-xs">
+            <button
+              type="button"
+              onClick={() => quickSelect('owner@nexus.app')}
+              className={`flex-1 py-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 ${
+                email === 'owner@nexus.app' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Crown size={13} /> Owner
+            </button>
+            <button
+              type="button"
+              onClick={() => quickSelect('admin@nexus.app')}
+              className={`flex-1 py-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 ${
+                email === 'admin@nexus.app' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Shield size={13} /> Admin
+            </button>
+            <button
+              type="button"
+              onClick={() => quickSelect('member@nexus.app')}
+              className={`flex-1 py-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 ${
+                email === 'member@nexus.app' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users size={13} /> Member
+            </button>
+          </div>
+        </div>
+
+        {/* Google OAuth Login Button */}
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          className="w-full bg-slate-950 hover:bg-slate-800/90 text-slate-200 border border-slate-700/80 font-medium py-2.5 rounded-xl text-xs flex items-center justify-center gap-2.5 transition shadow mb-4"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+            />
+          </svg>
+          Continue with Google
+        </button>
+
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 border-t border-slate-800"></div>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">or email password</span>
+          <div className="flex-1 border-t border-slate-800"></div>
         </div>
 
         {authError && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-xl mb-4">
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-xl mb-4 text-center">
             {authError}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           {!isLogin && (
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-            />
+            <div>
+              <label className="block text-[11px] font-medium text-slate-300 mb-1">Full Name</label>
+              <input
+                type="text"
+                placeholder="Jane Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+              />
+            </div>
           )}
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-          />
+          <div>
+            <label className="block text-[11px] font-medium text-slate-300 mb-1">Work Email</label>
+            <input
+              type="email"
+              placeholder="user@nexus.app"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-slate-300 mb-1">Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+            />
+          </div>
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg text-sm transition shadow-lg shadow-indigo-600/30"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg shadow-indigo-600/30 mt-2"
           >
-            {loading ? 'Authenticating...' : isLogin ? 'Sign In' : 'Register'}
+            {loading ? 'Authenticating with Atlas...' : isLogin ? 'Sign In to Workspace' : 'Create Workspace Account'}
           </button>
         </form>
 
-        <button
-          onClick={() => {
-            setIsLogin(!isLogin);
-            setAuthError('');
-          }}
-          className="mt-4 text-xs text-indigo-400 hover:underline w-full text-center"
-        >
-          {isLogin ? 'Need a new account? Sign up' : 'Already registered? Login'}
-        </button>
+        <div className="mt-5 text-center text-xs text-slate-400">
+          {isLogin ? "Need a new personal workspace? " : 'Already have an account? '}
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setAuthError('');
+            }}
+            className="text-indigo-400 hover:underline font-bold"
+          >
+            {isLogin ? 'Sign up' : 'Log in'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -206,10 +264,10 @@ function WorkspaceSwitcher() {
     <div className="relative mb-6">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full px-2.5 py-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-lg transition"
+        className="flex items-center justify-between w-full px-2.5 py-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition"
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="h-6 w-6 rounded bg-indigo-600 flex items-center justify-center font-bold text-xs text-white shrink-0">
+          <div className="h-6 w-6 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-xs text-white shrink-0">
             {currentWorkspace?.name?.charAt(0) || 'W'}
           </div>
           <span className="text-xs font-bold text-white truncate">{currentWorkspace?.name || 'Select Workspace'}</span>
@@ -242,7 +300,7 @@ function WorkspaceSwitcher() {
               setShowModal(true);
               setIsOpen(false);
             }}
-            className="flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs text-indigo-400 hover:bg-slate-800 rounded-lg transition"
+            className="flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs text-indigo-400 hover:bg-slate-800 rounded-lg transition font-medium"
           >
             <Plus size={13} /> Create Workspace
           </button>
@@ -260,7 +318,7 @@ function WorkspaceSwitcher() {
                 placeholder="Workspace Name (e.g. Growth Marketing)"
                 value={newWsName}
                 onChange={(e) => setNewWsName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white text-xs mb-4 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white text-xs mb-4 focus:outline-none focus:border-indigo-500"
               />
               <div className="flex justify-end gap-2">
                 <button
@@ -272,7 +330,7 @@ function WorkspaceSwitcher() {
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs text-white font-medium rounded-lg shadow"
+                  className="bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs text-white font-medium rounded-xl shadow"
                 >
                   Create
                 </button>
@@ -344,7 +402,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.to}
                     to={item.to}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition ${
                       active
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
                         : 'text-slate-400 hover:bg-slate-800 hover:text-white'
