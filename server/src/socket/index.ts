@@ -33,13 +33,20 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     transports: ['websocket', 'polling'],
   });
 
-  try {
-    const pubClient = getRedisClient();
-    const subClient = pubClient.duplicate();
-    subClient.on('error', (err) => logger.warn(`Redis subClient pending: ${err.message || 'offline'}`));
-    io.adapter(createAdapter(pubClient, subClient));
-  } catch (err: any) {
-    logger.warn('Socket.io Redis adapter init fallback to memory adapter', { err: err.message });
+  const isCloudRedis =
+    Boolean(env.REDIS_URL) &&
+    !env.REDIS_URL.includes('localhost') &&
+    !env.REDIS_URL.includes('127.0.0.1');
+
+  if (isCloudRedis) {
+    try {
+      const pubClient = getRedisClient();
+      const subClient = pubClient.duplicate();
+      subClient.on('error', () => {});
+      io.adapter(createAdapter(pubClient, subClient));
+    } catch {
+      // Memory adapter fallback
+    }
   }
 
   // Authentication middleware for Socket.io
@@ -73,25 +80,17 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     // Join personal user room for targeted notifications
     await socket.join(`user:${userId}`);
 
-    try {
-      const redis = getRedisClient();
-      await redis.sadd(`online:users`, userId);
-      if (workspaceId) {
-        await socket.join(`workspace:${workspaceId}`);
-        await redis.sadd(`presence:ws:${workspaceId}`, userId);
-        io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
-          userId,
-          status: 'online',
-        });
-      }
-    } catch {
-      // Non-blocking
+    if (workspaceId) {
+      await socket.join(`workspace:${workspaceId}`);
+      io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
+        userId,
+        status: 'online',
+      });
     }
 
     // Room join handlers
     socket.on('join:board', async (boardId: string) => {
       await socket.join(`board:${boardId}`);
-      logger.debug(`Socket ${socket.id} joined board:${boardId}`);
     });
 
     socket.on('leave:board', async (boardId: string) => {
@@ -131,24 +130,11 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
 
     // Clean up on disconnect
     socket.on('disconnecting', async () => {
-      const rooms = Array.from(socket.rooms);
-      logger.info(`Socket disconnecting: ${socket.id} (rooms: ${rooms.join(', ')})`);
-
-      try {
-        const redis = getRedisClient();
-        const sockets = await io.in(`user:${userId}`).fetchSockets();
-        if (sockets.length <= 1) {
-          await redis.srem(`online:users`, userId);
-          if (workspaceId) {
-            await redis.srem(`presence:ws:${workspaceId}`, userId);
-            io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
-              userId,
-              status: 'offline',
-            });
-          }
-        }
-      } catch {
-        // Non-blocking
+      if (workspaceId) {
+        io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
+          userId,
+          status: 'offline',
+        });
       }
     });
   });
