@@ -33,9 +33,13 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     transports: ['websocket', 'polling'],
   });
 
-  const pubClient = getRedisClient();
-  const subClient = pubClient.duplicate();
-  io.adapter(createAdapter(pubClient, subClient));
+  try {
+    const pubClient = getRedisClient();
+    const subClient = pubClient.duplicate();
+    io.adapter(createAdapter(pubClient, subClient));
+  } catch (err: any) {
+    logger.warn('Socket.io Redis adapter init failed, using default memory adapter', { err: err.message });
+  }
 
   // Authentication middleware for Socket.io
   io.use((socket, next) => {
@@ -68,16 +72,19 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     // Join personal user room for targeted notifications
     await socket.join(`user:${userId}`);
 
-    // Track online presence in Redis
-    const redis = getRedisClient();
-    await redis.sadd(`online:users`, userId);
-    if (workspaceId) {
-      await socket.join(`workspace:${workspaceId}`);
-      await redis.sadd(`presence:ws:${workspaceId}`, userId);
-      io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
-        userId,
-        status: 'online',
-      });
+    try {
+      const redis = getRedisClient();
+      await redis.sadd(`online:users`, userId);
+      if (workspaceId) {
+        await socket.join(`workspace:${workspaceId}`);
+        await redis.sadd(`presence:ws:${workspaceId}`, userId);
+        io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
+          userId,
+          status: 'online',
+        });
+      }
+    } catch {
+      // Ignore presence error if redis is connecting
     }
 
     // Room join handlers
@@ -126,17 +133,21 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
       const rooms = Array.from(socket.rooms);
       logger.info(`Socket disconnecting: ${socket.id} (rooms: ${rooms.join(', ')})`);
 
-      // Check if user has other open sockets before marking offline
-      const sockets = await io.in(`user:${userId}`).fetchSockets();
-      if (sockets.length <= 1) {
-        await redis.srem(`online:users`, userId);
-        if (workspaceId) {
-          await redis.srem(`presence:ws:${workspaceId}`, userId);
-          io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
-            userId,
-            status: 'offline',
-          });
+      try {
+        const redis = getRedisClient();
+        const sockets = await io.in(`user:${userId}`).fetchSockets();
+        if (sockets.length <= 1) {
+          await redis.srem(`online:users`, userId);
+          if (workspaceId) {
+            await redis.srem(`presence:ws:${workspaceId}`, userId);
+            io.to(`workspace:${workspaceId}`).emit('presenceUpdate', {
+              userId,
+              status: 'offline',
+            });
+          }
         }
+      } catch {
+        // Ignore
       }
     });
   });

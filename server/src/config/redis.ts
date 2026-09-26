@@ -8,13 +8,18 @@ let bullMqRedisClient: Redis | null = null;
 export function getRedisClient(): Redis {
   if (!redisClient) {
     redisClient = new Redis(env.REDIS_URL, {
-      maxRetriesPerRequest: 3,
-      enableReadyCheck: true,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
       lazyConnect: false,
+      retryStrategy(times) {
+        const delay = Math.min(times * 1000, 10000);
+        return delay;
+      },
+      tls: env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
     });
 
     redisClient.on('connect', () => logger.info('Redis connected'));
-    redisClient.on('error', (err) => logger.error('Redis error', { err }));
+    redisClient.on('error', (err) => logger.error('Redis error', { err: err.message }));
     redisClient.on('close', () => logger.warn('Redis connection closed'));
   }
   return redisClient;
@@ -25,6 +30,12 @@ export function getBullMqRedisClient(): Redis {
     bullMqRedisClient = new Redis(env.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
+      lazyConnect: false,
+      retryStrategy(times) {
+        const delay = Math.min(times * 1000, 10000);
+        return delay;
+      },
+      tls: env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
     });
   }
   return bullMqRedisClient;
